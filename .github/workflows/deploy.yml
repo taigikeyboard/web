@@ -79,7 +79,7 @@ jobs:
   check:
     needs: [build, deploy]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,22 +92,11 @@ jobs:
         with:
           node-version: '22'
 
-      # A purge before Pages' own CDN has the new files caches the old ones again, and
-      # the origin cannot be asked directly: github.io redirects to this domain.
-      - name: Purge the edge and check the live files
-        run: |
-          for attempt in 1 2 3; do
-            sleep 60
-            curl --fail-with-body --silent --show-error -X POST \
-              "https://api.cloudflare.com/client/v4/zones/$ZONE/purge_cache" \
-              -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-              --data '{"prefixes":["taigikeyboard.tw/web/"]}'
-            if node web/scripts/check-live.mjs https://taigikeyboard.tw/web/ "$BUILD"; then
-              exit 0
-            fi
-          done
-          exit 1
+      # Longer than the edge's max-age=600.
+      - name: Wait for the edge
+        run: sleep 660
+
+      - name: Check the live files
+        run: node web/scripts/check-live.mjs https://taigikeyboard.tw/web/ "$BUILD"
         env:
-          ZONE: ${{ vars.CLOUDFLARE_ZONE_ID }}
-          TOKEN: ${{ secrets.CLOUDFLARE_PURGE_TOKEN }}
           BUILD: ${{ needs.build.outputs.build }}
