@@ -75,6 +75,9 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        # A healthy deploy takes ~10 s; a stuck one never leaves an empty status.
+        with:
+          timeout: 120000
 
   check:
     needs: [build, deploy]
