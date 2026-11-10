@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       commit:
-        description: Full commit of taigikeyboard/taigikeyboard
-        required: true
+        description: Full commit of taigikeyboard/taigikeyboard; blank deploys main's head
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -20,11 +21,24 @@ jobs:
     timeout-minutes: 30
     outputs:
       build: ${{ steps.name.outputs.build }}
+      commit: ${{ steps.commit.outputs.commit }}
     steps:
+      # The nightly run names the commit its gates passed; a run by hand may leave
+      # it blank for main's head, read once so every job builds the same commit.
+      - name: Resolve the commit
+        id: commit
+        run: |
+          commit="${INPUT:-$(gh api repos/taigikeyboard/taigikeyboard/commits/main --jq .sha)}"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "commit $commit" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT: ${{ inputs.commit }}
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: taigikeyboard/taigikeyboard
-          ref: ${{ inputs.commit }}
+          ref: ${{ steps.commit.outputs.commit }}
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -47,7 +61,7 @@ jobs:
           test "$status" = identical || test "$status" = behind
         env:
           GH_TOKEN: ${{ github.token }}
-          COMMIT: ${{ inputs.commit }}
+          COMMIT: ${{ steps.commit.outputs.commit }}
 
       - name: Stage the site
         run: make -C web site
@@ -87,7 +101,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: taigikeyboard/taigikeyboard
-          ref: ${{ inputs.commit }}
+          ref: ${{ needs.build.outputs.commit }}
           persist-credentials: false
           sparse-checkout: web/scripts
 
