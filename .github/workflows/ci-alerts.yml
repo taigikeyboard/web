@@ -1,0 +1,45 @@
+name: CI alerts
+
+# Posts one Discord message (#ci-alerts, secret DISCORD_CI_ALERTS_WEBHOOK) when
+# a Deploy run fails — build, Pages upload or the live check. Same channel and
+# payload as taigikeyboard/taigikeyboard's .github/workflows/ci-alerts.yml,
+# which cannot see runs in this repository.
+#
+# - `workflows:` matches the workflow's `name:`, not its file.
+# - Cancelled runs do not alert.
+# - `workflow_run` runs this file from the default branch only. No checkout:
+#   run fields reach the shell only as env.
+on:
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  notify:
+    name: post a failed deploy to Discord
+    if: >-
+      github.repository == 'taigikeyboard/web' &&
+      contains(fromJSON('["failure", "timed_out", "startup_failure"]'), github.event.workflow_run.conclusion)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Post to Discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_CI_ALERTS_WEBHOOK }}
+          TITLE: Web ${{ github.event.workflow_run.name }} ${{ github.event.workflow_run.conclusion }}
+          RUN_TITLE: ${{ github.event.workflow_run.display_title }}
+          DETAIL: ${{ github.event.workflow_run.event }} on ${{ github.event.workflow_run.head_branch }} · ${{ github.event.workflow_run.triggering_actor.login }}
+          URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::warning::DISCORD_CI_ALERTS_WEBHOOK not set; skipping"
+            exit 0
+          fi
+          jq -n --arg title "$TITLE" --arg url "$URL" \
+                --arg desc "$RUN_TITLE"$'\n'"$DETAIL" \
+            '{allowed_mentions: {parse: []},
+              embeds: [{title: ($title | .[0:256]), url: $url,
+                        description: ($desc | .[0:4096]), color: 15158332}]}' \
+          | curl -fsS --retry 3 -H 'Content-Type: application/json' -d @- "$WEBHOOK"
